@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  background: #000;
+  color: #d1d5db;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino,
+    serif;
+}
+
+.terminal-font {
+  font-family: "IBM Plex Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
