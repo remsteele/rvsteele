@@ -37,16 +37,27 @@ const readme = [
   "  cd projects",
   "  cat index.txt",
   "  tree",
+  "  cat about.txt",
   "  cat contact.txt"
 ].join("\n");
 
 const contact = [
   "Contact",
   "-------",
-  "Email: remington@portfolio.dev",
+  "Phone: 619-635-3351",
+  "Email: rsteele2215@gmail.com",
+  "Website: https://rvsteele.com",
   "GitHub: https://github.com/remsteele",
   "LinkedIn: https://linkedin.com/in/rvsteele",
-  "Location: United States"
+  "Location: San Diego, CA"
+].join("\n");
+
+const about = [
+  "About Me",
+  "--------",
+  "I am a software engineer who likes building practical systems that hold up in production.",
+  "Outside work, I am into climbing, coding side projects, food, skating, lifting at the gym,",
+  "video games, and chess."
 ].join("\n");
 
 export const VFS_ROOT: VirtualDirectory = {
@@ -66,36 +77,53 @@ export const VFS_ROOT: VirtualDirectory = {
                   content: [
                     "Projects Overview",
                     "-----------------",
-                    "1. project_1.txt - Systems and automation work",
-                    "2. project_2.txt - Full-stack application delivery",
+                    "1. copilotcareer.txt - Production AI platform backend redesign",
+                    "2. homelab.txt - Multi-OS infrastructure and systems administration",
+                    "3. bubblemachine.txt - Full-stack delivery with Django + Stripe",
                     "",
-                    "Use cat project_1.txt or cat project_2.txt"
+                    "Use cat <file>.txt to inspect each project"
                   ].join("\n")
                 },
-                "project_1.txt": {
+                "copilotcareer.txt": {
                   type: "file",
                   content: [
-                    "Project 1: Distributed Ingestion Pipeline",
-                    "-----------------------------------------",
-                    "Role: Lead Engineer",
-                    "Stack: Go, Postgres, Redis, Docker, AWS",
+                    "CopilotCareer | June 2024 - Present",
+                    "-----------------------------------",
+                    "Role: Backend Engineering Lead",
+                    "Stack: Go, Python, PostgreSQL, Azure, Apidog",
                     "Highlights:",
-                    "- Built resilient queue consumers with backpressure controls",
-                    "- Reduced ingestion latency from minutes to sub-second ranges",
-                    "- Added observability with tracing and SLO-driven alerting"
+                    "- Led backend redesign for a production AI platform",
+                    "- Migrated legacy Python services to a concurrent Go backend",
+                    "- Reworked PostgreSQL schemas for stronger normalization",
+                    "- Designed and documented a consistent versioned REST API"
                   ].join("\n")
                 },
-                "project_2.txt": {
+                "homelab.txt": {
                   type: "file",
                   content: [
-                    "Project 2: Workflow Operations Console",
-                    "--------------------------------------",
-                    "Role: Full-Stack Engineer",
-                    "Stack: Next.js, TypeScript, Tailwind, GraphQL",
+                    "Self-Hosted HomeLab | June 2024 - Present",
+                    "------------------------------------------",
+                    "Role: Systems Administration Project (Personal)",
+                    "Stack: OpenBSD, FreeBSD, AlmaLinux, Ubuntu, OpenIndiana, AIX, Ansible",
                     "Highlights:",
-                    "- Delivered operator-facing dashboards for incident workflows",
-                    "- Implemented role-aware UI and auditable actions",
-                    "- Improved release confidence with integration test coverage"
+                    "- Operate a multi-VM environment that simulates heterogeneous enterprise systems",
+                    "- Built centralized DNS (NSD), LDAP auth, PKI/TLS, and NFS shared services",
+                    "- Automated configuration and privilege workflows with Ansible and Vault",
+                    "- Run production-style services: GitLab, TLS nginx, Docker apps, logging, backups"
+                  ].join("\n")
+                },
+                "bubblemachine.txt": {
+                  type: "file",
+                  content: [
+                    "bubblemachine.org | April 2025 - September 2025",
+                    "-----------------------------------------------",
+                    "Role: Software Engineer (SDSU Research Grant Project)",
+                    "Stack: React, Django, PostgreSQL, Stripe",
+                    "Highlights:",
+                    "- Led a 2-engineer team turning a client-only React prototype into production software",
+                    "- Built secure backend services with authentication and cloud persistence",
+                    "- Implemented subscription billing and access controls with Stripe",
+                    "- Extended frontend account flows and cloud-synced features"
                   ].join("\n")
                 }
               }
@@ -108,30 +136,53 @@ export const VFS_ROOT: VirtualDirectory = {
                   content: [
                     "Skills Overview",
                     "---------------",
-                    "- Languages: Go, TypeScript, Python, SQL",
-                    "- Frontend: React, Next.js, Tailwind",
-                    "- Backend: REST, GraphQL, distributed systems",
-                    "- Platform: Docker, CI/CD, monitoring, cloud infra"
+                    "- Languages: Go, Python, JavaScript, HTML, CSS, SQL",
+                    "- Frameworks/Tools: Gin, Django, Docker, Git, Azure, PostgreSQL, GitHub Actions",
+                    "- Systems: Unix administration, distributed systems, database theory, networking",
+                    "",
+                    "See languages.txt, frameworks-tools.txt, and coursework.txt"
                   ].join("\n")
                 },
-                "backend.txt": {
+                "languages.txt": {
                   type: "file",
                   content: [
-                    "Backend",
-                    "-------",
-                    "- API design and service decomposition",
-                    "- Database modeling and query optimization",
-                    "- Concurrency, reliability, and production operations"
+                    "Languages",
+                    "---------",
+                    "- Go",
+                    "- Python",
+                    "- JavaScript",
+                    "- HTML",
+                    "- CSS",
+                    "- SQL"
                   ].join("\n")
                 },
-                "frontend.txt": {
+                "frameworks-tools.txt": {
                   type: "file",
                   content: [
-                    "Frontend",
-                    "--------",
-                    "- Design systems and purposeful UI architecture",
-                    "- Accessible, performant interfaces in React/Next.js",
-                    "- Advanced state management and data-fetch workflows"
+                    "Frameworks & Tools",
+                    "------------------",
+                    "- Gin",
+                    "- Django",
+                    "- Docker",
+                    "- Git",
+                    "- Azure",
+                    "- PostgreSQL",
+                    "- GitHub Actions"
+                  ].join("\n")
+                },
+                "coursework.txt": {
+                  type: "file",
+                  content: [
+                    "Relevant Coursework",
+                    "-------------------",
+                    "- Object-Oriented Programming",
+                    "- Data Structures & Algorithms",
+                    "- Advanced Programming Languages",
+                    "- Operating Systems",
+                    "- Database Theory",
+                    "- Distributed Systems",
+                    "- Wireless Networking",
+                    "- Unix System Administration"
                   ].join("\n")
                 }
               }
@@ -144,25 +195,48 @@ export const VFS_ROOT: VirtualDirectory = {
                   content: [
                     "Experience Overview",
                     "-------------------",
-                    "See company_1.txt and company_2.txt for selected roles."
+                    "1. backend-engineering-lead.txt",
+                    "2. software-engineer-bubblemachine.txt",
+                    "3. production-technician.txt"
                   ].join("\n")
                 },
-                "company_1.txt": {
+                "backend-engineering-lead.txt": {
                   type: "file",
                   content: [
-                    "Company 1 - Senior Software Engineer",
-                    "-------------------------------------",
-                    "Built core platform APIs and operational tooling.",
-                    "Partnered with product and infrastructure to ship reliably."
+                    "Backend Engineering Lead | June 2024 - Present",
+                    "-----------------------------------------------",
+                    "Organization: SDSU Digital Innovation Lab",
+                    "Location: San Diego, CA",
+                    "- Lead 3 backend engineers across 4 production web applications",
+                    "- Built scalable backends in Go/Python with PostgreSQL and SQL Server",
+                    "- Delivered RAG and multi-step tool-calling AI workflows",
+                    "- Improved throughput up to 6x and reduced latency by 70%",
+                    "- Led Azure deployment strategy and cut cloud costs by 66%"
                   ].join("\n")
                 },
-                "company_2.txt": {
+                "software-engineer-bubblemachine.txt": {
                   type: "file",
                   content: [
-                    "Company 2 - Software Engineer",
-                    "------------------------------",
-                    "Delivered customer-facing features across web and backend services.",
-                    "Focused on maintainability, testing, and service quality."
+                    "Software Engineer | April 2025 - September 2025",
+                    "-----------------------------------------------",
+                    "Project: bubblemachine.org (SDSU Research Grant)",
+                    "Location: San Diego, CA",
+                    "- Led a 2-engineer team and productionized a React prototype",
+                    "- Built Django + PostgreSQL backend with auth and persistence",
+                    "- Implemented Stripe subscriptions and access controls",
+                    "- Extended frontend account management and cloud-sync UX"
+                  ].join("\n")
+                },
+                "production-technician.txt": {
+                  type: "file",
+                  content: [
+                    "Production Technician | December 2021 - Present",
+                    "-----------------------------------------------",
+                    "Organization: Turning Point Ministries",
+                    "Location: San Diego, CA",
+                    "- Camera operator and crew chief for live and studio productions",
+                    "- Plan and validate camera systems with media + technical teams",
+                    "- Own setup, live monitoring, and teardown workflows"
                   ].join("\n")
                 }
               }
@@ -175,29 +249,36 @@ export const VFS_ROOT: VirtualDirectory = {
                   content: [
                     "Education Overview",
                     "------------------",
-                    "See degree.txt and certifications.txt"
+                    "See degree.txt and campus-involvement.txt"
                   ].join("\n")
                 },
                 "degree.txt": {
                   type: "file",
                   content: [
-                    "B.S. Computer Science",
-                    "----------------------",
-                    "Focus: systems, algorithms, and software engineering."
+                    "San Diego State University",
+                    "--------------------------",
+                    "Bachelor of Science in Computer Science",
+                    "Dates: August 2022 - May 2026",
+                    "GPA: 3.8",
+                    "Location: San Diego, CA"
                   ].join("\n")
                 },
-                "certifications.txt": {
+                "campus-involvement.txt": {
                   type: "file",
                   content: [
-                    "Certifications",
-                    "--------------",
-                    "- Cloud architecture fundamentals",
-                    "- Secure software development practices"
+                    "Clubs & Organizations",
+                    "---------------------",
+                    "- ZIP Launchpad",
+                    "- AI Club",
+                    "- Rocket Project",
+                    "- Mechatronics",
+                    "- Chess Club"
                   ].join("\n")
                 }
               }
             },
             "README.txt": { type: "file", content: readme },
+            "about.txt": { type: "file", content: about },
             "contact.txt": { type: "file", content: contact }
           }
         }
