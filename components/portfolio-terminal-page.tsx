@@ -11,8 +11,10 @@ function GitHubIcon() {
 
 function LinkedInIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current">
-      <path d="M4.983 3.5C4.983 4.88 3.87 6 2.5 6S0 4.88 0 3.5 1.113 1 2.483 1 4.983 2.12 4.983 3.5ZM.3 8h4.366v15H.3V8Zm7.142 0h4.186v2.048h.06c.582-1.102 2.004-2.264 4.126-2.264C20.2 7.784 24 10.67 24 15.98V23h-4.363v-6.208c0-1.48-.027-3.383-2.06-3.383-2.06 0-2.374 1.61-2.374 3.275V23H10.84V8Z" />
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none">
+      <rect x="2" y="2" width="20" height="20" rx="4.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="7.3" cy="8.2" r="1.3" fill="currentColor" />
+      <path d="M6.1 10.9h2.3V18H6.1v-7.1Zm4 0h2.2v1c.5-.8 1.5-1.3 2.8-1.3 2.4 0 3.8 1.5 3.8 4.4V18h-2.3v-2.8c0-1.5-.6-2.4-1.8-2.4-1.1 0-2.2.7-2.2 2.4V18h-2.3v-7.1Z" fill="currentColor" />
     </svg>
   );
 }
@@ -20,8 +22,8 @@ function LinkedInIcon() {
 export function PortfolioTerminalPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-black">
-      <section className="absolute right-5 top-5 z-20 text-right md:right-8 md:top-8">
-        <h1 className="text-xl italic tracking-wide text-slate-100 md:text-2xl">
+      <section className="absolute right-5 top-5 z-0 text-right md:right-8 md:top-8">
+        <h1 className="signature-font tracking-[0.03em] text-slate-100">
           Remington Steele
         </h1>
         <div className="mt-3 flex justify-end gap-3 text-slate-300">
@@ -29,7 +31,7 @@ export function PortfolioTerminalPage() {
             href="https://github.com/remsteele"
             target="_blank"
             rel="noreferrer"
-            className="transition-colors hover:text-white"
+            className="rounded-md border border-slate-700/70 p-1.5 transition-colors hover:border-slate-100 hover:text-white"
             aria-label="GitHub profile"
           >
             <GitHubIcon />
@@ -38,7 +40,7 @@ export function PortfolioTerminalPage() {
             href="https://linkedin.com/in/rvsteele"
             target="_blank"
             rel="noreferrer"
-            className="transition-colors hover:text-white"
+            className="rounded-md border border-slate-700/70 p-1.5 transition-colors hover:border-slate-100 hover:text-white"
             aria-label="LinkedIn profile"
           >
             <LinkedInIcon />
@@ -46,7 +48,7 @@ export function PortfolioTerminalPage() {
         </div>
       </section>
 
-      <section className="flex min-h-screen items-end justify-center px-3 pb-4 pt-24 md:items-center md:px-0 md:pb-0 md:pt-0">
+      <section className="pointer-events-none relative z-10 flex min-h-screen items-end justify-center px-3 pb-4 pt-24 md:items-center md:px-0 md:pb-0 md:pt-0">
         <DraggableTerminalWindow>
           <TerminalEmulator />
         </DraggableTerminalWindow>

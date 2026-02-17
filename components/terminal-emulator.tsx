@@ -95,10 +95,16 @@ export function TerminalEmulator() {
     viewport.scrollTop = viewport.scrollHeight;
   }, [lines, input]);
 
+  const focusInput = () => {
+    inputRef.current?.focus({ preventScroll: true });
+  };
+
   return (
     <div
       className="terminal-font flex h-full w-full flex-col bg-[#0a0a0a] text-[14px] leading-6 text-slate-200 selection:bg-emerald-700/70 selection:text-white"
-      onMouseDown={() => inputRef.current?.focus()}
+      onPointerDownCapture={focusInput}
+      onMouseDownCapture={focusInput}
+      onClick={focusInput}
     >
       <div
         ref={viewportRef}
@@ -114,6 +120,7 @@ export function TerminalEmulator() {
           <span>{prompt}</span>
           <input
             ref={inputRef}
+            data-terminal-input="true"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {

@@ -27,3 +27,9 @@ body {
 .terminal-font {
   font-family: "IBM Plex Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
+
+.signature-font {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 24px;
+  font-style: italic;
+}
