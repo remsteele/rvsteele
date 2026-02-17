@@ -20,8 +20,7 @@ body {
 body {
   background: #000;
   color: #d1d5db;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino,
-    serif;
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", "Noto Sans", sans-serif;
 }
 
 .terminal-font {

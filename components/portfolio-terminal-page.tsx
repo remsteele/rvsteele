@@ -53,6 +53,18 @@ export function PortfolioTerminalPage() {
           <TerminalEmulator />
         </DraggableTerminalWindow>
       </section>
+
+      <footer className="pointer-events-auto absolute inset-x-0 bottom-0 z-0 flex items-center justify-between px-4 py-2 text-xs text-white md:px-6">
+        <span>leaked-ip: 192.168.0.12</span>
+        <a
+          href="/home-files/steele-remington-resume.pdf"
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2 hover:opacity-80"
+        >
+          resume
+        </a>
+      </footer>
     </main>
   );
 }
