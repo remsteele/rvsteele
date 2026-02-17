@@ -27,6 +27,11 @@ export type VfsMutationResult =
         | "cannot-remove-root";
     };
 
+export type ExternalHomeFile = {
+  name: string;
+  url: string;
+};
+
 const readme = [
   "Remington Steele Portfolio Terminal",
   "----------------------------------",
@@ -288,6 +293,16 @@ export const VFS_ROOT: VirtualDirectory = {
 };
 
 export const HOME_PATH = [...TERMINAL_CONFIG.homePath];
+const externalHomeFileUrls = new Map<string, string>();
+
+function externalFilePlaceholder(name: string): string {
+  return [
+    `[external file] ${name}`,
+    "",
+    `Use: open ${name}`,
+    "This file is backed by /public/home-files and can be removed with rm."
+  ].join("\n");
+}
 
 export function resolvePathSegments(cwd: string[], input: string): string[] {
   const source = input.trim();
@@ -348,6 +363,14 @@ export function getNodeAtPath(segments: string[]): VirtualNode | null {
 
 function isValidNodeName(name: string): boolean {
   return name.length > 0 && name !== "." && name !== ".." && !name.includes("/");
+}
+
+function clearExternalMappingsForPath(path: string): void {
+  for (const existingPath of Array.from(externalHomeFileUrls.keys())) {
+    if (existingPath === path || existingPath.startsWith(`${path}/`)) {
+      externalHomeFileUrls.delete(existingPath);
+    }
+  }
 }
 
 function getParentDirectory(
@@ -496,6 +519,7 @@ export function removeNode(segments: string[], recursive = false): VfsMutationRe
     return { ok: false, reason: "is-directory" };
   }
 
+  clearExternalMappingsForPath(absolutePath(segments));
   delete parentInfo.parent.children[parentInfo.name];
   return { ok: true };
 }
@@ -523,8 +547,41 @@ export function removeDirectory(segments: string[]): VfsMutationResult {
     return { ok: false, reason: "directory-not-empty" };
   }
 
+  clearExternalMappingsForPath(absolutePath(segments));
   delete parentInfo.parent.children[parentInfo.name];
   return { ok: true };
+}
+
+export function registerExternalHomeFiles(files: ExternalHomeFile[]): void {
+  const homeNode = getNodeAtPath(HOME_PATH);
+  if (!homeNode || homeNode.type !== "directory") {
+    return;
+  }
+
+  for (const file of files) {
+    if (!isValidNodeName(file.name)) continue;
+    const url = file.url.trim();
+    if (!url) continue;
+
+    const existing = homeNode.children[file.name];
+    if (existing?.type === "directory") {
+      continue;
+    }
+
+    if (!existing) {
+      homeNode.children[file.name] = {
+        type: "file",
+        content: externalFilePlaceholder(file.name)
+      };
+    }
+
+    const absPath = absolutePath([...HOME_PATH, file.name]);
+    externalHomeFileUrls.set(absPath, url);
+  }
+}
+
+export function getExternalFileUrl(segments: string[]): string | null {
+  return externalHomeFileUrls.get(absolutePath(segments)) ?? null;
 }
 
 export function getDirectoryEntries(node: VirtualDirectory): Array<{

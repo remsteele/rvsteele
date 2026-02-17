@@ -11,11 +11,20 @@ import {
   completeInput,
   executeCommand,
   type EditorLaunchRequest,
+  type OpenFileRequest,
   type PromptParts,
   type PythonRunRequest,
   type OutputTone
 } from "@/lib/terminal-engine";
-import { HOME_PATH, absolutePath, getNodeAtPath, writeFile } from "@/lib/virtual-filesystem";
+import {
+  HOME_PATH,
+  absolutePath,
+  getExternalFileUrl,
+  getNodeAtPath,
+  registerExternalHomeFiles,
+  writeFile,
+  type ExternalHomeFile
+} from "@/lib/virtual-filesystem";
 
 type TextRenderedLine = {
   id: number;
@@ -176,6 +185,45 @@ export function TerminalEmulator() {
     }
   };
 
+  const openFileInNewTab = (request: OpenFileRequest) => {
+    const node = getNodeAtPath(request.path);
+    if (!node || node.type !== "file") {
+      appendLines([
+        {
+          text: `open: ${request.displayTarget}: No such file or directory`,
+          tone: "error"
+        }
+      ]);
+      return;
+    }
+
+    const externalUrl = getExternalFileUrl(request.path);
+    if (externalUrl) {
+      const anchor = document.createElement("a");
+      anchor.href = externalUrl;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      return;
+    }
+
+    const fileName = request.path[request.path.length - 1] || "download.txt";
+    const blobUrl = URL.createObjectURL(
+      new Blob([node.content], { type: "application/octet-stream" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = blobUrl;
+    anchor.download = fileName;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  };
+
   const runInput = async () => {
     if (activeEditor || runningPython) return;
 
@@ -199,6 +247,10 @@ export function TerminalEmulator() {
 
     if (result.editor) {
       setActiveEditor(result.editor);
+    }
+
+    if (result.openFile) {
+      openFileInNewTab(result.openFile);
     }
 
     setInput("");
@@ -227,6 +279,36 @@ export function TerminalEmulator() {
     window.requestAnimationFrame(() => {
       inputRef.current?.focus({ preventScroll: true });
     });
+  }, []);
+
+  useEffect(() => {
+    const loadExternalHomeFiles = async () => {
+      try {
+        const response = await fetch("/api/home-files", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as {
+          files?: Array<{ name?: unknown; url?: unknown }>;
+        };
+        if (!Array.isArray(payload.files)) return;
+
+        const files: ExternalHomeFile[] = payload.files
+          .filter(
+            (file): file is { name: string; url: string } =>
+              typeof file.name === "string" && typeof file.url === "string"
+          )
+          .map((file) => ({
+            name: file.name,
+            url: file.url
+          }));
+
+        registerExternalHomeFiles(files);
+      } catch {
+        // Ignore optional import failures and continue with core terminal behavior.
+      }
+    };
+
+    void loadExternalHomeFiles();
   }, []);
 
   useEffect(() => {

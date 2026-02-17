@@ -12,11 +12,29 @@ npm run dev
 - Virtual filesystem with read/write commands
 - Editable files with `vim <file>` / `vi <file>` (backed by JSVI)
 - Python execution with Pyodide via `python3 file.py` or `file.py`
+- `open <file>` support:
+  - Virtual text files trigger a browser download
+  - Files from `public/home-files/` are mounted in `~` and open in a new tab
 
 Inside vim:
 - `:w` saves
 - `:q` exits
 - `:wq` saves and exits
+
+## Home file imports
+Drop files (like `resume.pdf`) into:
+
+`public/home-files/`
+
+On page load, those files are added to the terminal home directory (`~`).
+Example:
+
+```bash
+ls
+open resume.pdf
+```
+
+If you run `rm resume.pdf`, it is removed from the shell session.
 
 ## Third-party license notice (JSVI)
 This project includes code from **JSVI** (`public/vendor/jsvi/vi.js`, `public/vendor/jsvi/vi.css`)

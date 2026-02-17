@@ -33,12 +33,18 @@ export type PythonRunRequest = {
   argv: string[];
 };
 
+export type OpenFileRequest = {
+  path: string[];
+  displayTarget: string;
+};
+
 export type ExecutionResult = {
   nextCwd: string[];
   clear: boolean;
   lines: TerminalOutputLine[];
   editor?: EditorLaunchRequest;
   pythonRun?: PythonRunRequest;
+  openFile?: OpenFileRequest;
 };
 
 export type CompletionResult = {
@@ -59,6 +65,7 @@ const COMMANDS = [
   "pwd",
   "cat",
   "less",
+  "open",
   "tree",
   "vim",
   "vi",
@@ -82,6 +89,7 @@ const PATH_COMMANDS = new Set([
   "ls",
   "cat",
   "less",
+  "open",
   "tree",
   "vim",
   "vi",
@@ -103,6 +111,7 @@ const COMMON_HELP = [
   "  pwd       print working directory",
   "  cat       print file contents",
   "  less      simplified pager (prints file)",
+  "  open      download file (external home files open in a tab)",
   "  tree      print directory tree",
   "  vim       edit a file in vi mode",
   "  python3   run a .py file with Pyodide",
@@ -699,6 +708,52 @@ export function executeCommand(input: string, cwd: string[], history: string[]):
     case "cat":
     case "less":
       return { nextCwd: cwd, clear: false, lines: readFiles(command, cwd, args) };
+    case "open": {
+      if (args.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: "open: missing file operand", tone: "error" }]
+        };
+      }
+
+      if (args.length > 1) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: "open: only single-file open is supported", tone: "error" }]
+        };
+      }
+
+      const target = args[0];
+      const path = resolvePathSegments(cwd, target);
+      const node = getNodeAtPath(path);
+      if (!node) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `open: ${target}: No such file or directory`, tone: "error" }]
+        };
+      }
+
+      if (node.type !== "file") {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `open: ${target}: Is a directory`, tone: "error" }]
+        };
+      }
+
+      return {
+        nextCwd: cwd,
+        clear: false,
+        lines: [],
+        openFile: {
+          path,
+          displayTarget: target
+        }
+      };
+    }
     case "tree": {
       const target = args[0] ?? ".";
       const path = resolvePathSegments(cwd, target);
