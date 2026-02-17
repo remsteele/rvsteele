@@ -1,11 +1,16 @@
 import { TERMINAL_CONFIG } from "@/lib/terminal-config";
 import {
   absolutePath,
+  createDirectory,
+  createFile,
   getDirectoryEntries,
   getNodeAtPath,
   promptPath,
+  removeDirectory,
+  removeNode,
   renderTree,
-  resolvePathSegments
+  resolvePathSegments,
+  type VirtualNode
 } from "@/lib/virtual-filesystem";
 
 export type OutputTone = "normal" | "error" | "muted";
@@ -34,6 +39,10 @@ const COMMANDS = [
   "cat",
   "less",
   "tree",
+  "touch",
+  "mkdir",
+  "rm",
+  "rmdir",
   "whoami",
   "hostname",
   "uname",
@@ -43,7 +52,17 @@ const COMMANDS = [
   "clear"
 ] as const;
 
-const PATH_COMMANDS = new Set(["cd", "ls", "cat", "less", "tree"]);
+const PATH_COMMANDS = new Set([
+  "cd",
+  "ls",
+  "cat",
+  "less",
+  "tree",
+  "touch",
+  "mkdir",
+  "rm",
+  "rmdir"
+]);
 
 const COMMON_HELP = [
   "Ubuntu-like portfolio shell (simulated)",
@@ -56,6 +75,10 @@ const COMMON_HELP = [
   "  cat       print file contents",
   "  less      simplified pager (prints file)",
   "  tree      print directory tree",
+  "  touch     create an empty file",
+  "  mkdir     create a directory (-p supported)",
+  "  rm        remove files (-r, -f supported)",
+  "  rmdir     remove empty directories",
   "  history   show command history",
   "  clear     clear terminal",
   "  whoami    show active user",
@@ -65,7 +88,52 @@ const COMMON_HELP = [
   "  echo      print text"
 ];
 
-function formatLs(path: string[], explicitLabel: string | null): TerminalOutputLine[] {
+type ParsedFlags = {
+  flags: Set<string>;
+  operands: string[];
+  invalidFlag: string | null;
+};
+
+function parseShortFlags(args: string[], allowedFlags: Set<string>): ParsedFlags {
+  const flags = new Set<string>();
+  const operands: string[] = [];
+  let parsingFlags = true;
+
+  for (const arg of args) {
+    if (parsingFlags && arg === "--") {
+      parsingFlags = false;
+      continue;
+    }
+
+    if (parsingFlags && arg.startsWith("-") && arg.length > 1) {
+      for (const flag of arg.slice(1)) {
+        if (!allowedFlags.has(flag)) {
+          return { flags, operands, invalidFlag: flag };
+        }
+        flags.add(flag);
+      }
+      continue;
+    }
+
+    operands.push(arg);
+  }
+
+  return { flags, operands, invalidFlag: null };
+}
+
+function formatLongEntry(name: string, node: VirtualNode): string {
+  const permissions = node.type === "directory" ? "drwxr-xr-x" : "-rw-r--r--";
+  const size = node.type === "directory" ? Object.keys(node.children).length : node.content.length;
+  const owner = TERMINAL_CONFIG.username;
+  const label = node.type === "directory" ? `${name}/` : name;
+  return `${permissions}  1 ${owner} ${owner} ${String(size).padStart(6, " ")} ${label}`;
+}
+
+function formatLs(
+  path: string[],
+  explicitLabel: string | null,
+  options: { showAll: boolean; longFormat: boolean }
+): TerminalOutputLine[] {
   const node = getNodeAtPath(path);
   if (!node) {
     return [
@@ -77,14 +145,42 @@ function formatLs(path: string[], explicitLabel: string | null): TerminalOutputL
   }
 
   if (node.type === "file") {
+    if (options.longFormat) {
+      const label = explicitLabel ?? path[path.length - 1] ?? absolutePath(path);
+      return [{ text: formatLongEntry(label, node) }];
+    }
     return [{ text: explicitLabel ?? absolutePath(path) }];
   }
 
-  const entries = getDirectoryEntries(node).map(
-    (entry) => `${entry.name}${entry.node.type === "directory" ? "/" : ""}`
+  const entries = getDirectoryEntries(node).filter(
+    (entry) => options.showAll || !entry.name.startsWith(".")
   );
 
-  return [{ text: entries.join("  ") }];
+  if (options.longFormat) {
+    const lines: TerminalOutputLine[] = [];
+    if (options.showAll) {
+      const parentPath = path.length > 0 ? path.slice(0, -1) : [];
+      const parentNode = getNodeAtPath(parentPath);
+      lines.push({ text: formatLongEntry(".", node) });
+      if (parentNode && parentNode.type === "directory") {
+        lines.push({ text: formatLongEntry("..", parentNode) });
+      }
+    }
+
+    lines.push(...entries.map((entry) => ({ text: formatLongEntry(entry.name, entry.node) })));
+    return lines.length > 0 ? lines : [{ text: "" }];
+  }
+
+  const entryNames: string[] = [];
+  if (options.showAll) {
+    entryNames.push(".", "..");
+  }
+
+  entryNames.push(
+    ...entries.map((entry) => `${entry.name}${entry.node.type === "directory" ? "/" : ""}`)
+  );
+
+  return [{ text: entryNames.join("  ") }];
 }
 
 function readFiles(commandName: "cat" | "less", cwd: string[], args: string[]): TerminalOutputLine[] {
@@ -151,18 +247,29 @@ export function executeCommand(input: string, cwd: string[], history: string[]):
         lines: COMMON_HELP.map((text) => ({ text }))
       };
     case "ls": {
-      if (args.length === 0) {
-        return { nextCwd: cwd, clear: false, lines: formatLs(cwd, null) };
+      const parsed = parseShortFlags(args, new Set(["a", "l"]));
+      if (parsed.invalidFlag) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `ls: invalid option -- '${parsed.invalidFlag}'`, tone: "error" }]
+        };
       }
 
+      const targets = parsed.operands.length > 0 ? parsed.operands : ["."];
+      const lsOptions = {
+        showAll: parsed.flags.has("a"),
+        longFormat: parsed.flags.has("l")
+      };
+
       const output: TerminalOutputLine[] = [];
-      args.forEach((arg, index) => {
+      targets.forEach((arg, index) => {
         const path = resolvePathSegments(cwd, arg);
-        if (args.length > 1) {
+        if (targets.length > 1) {
           output.push({ text: `${arg}:`, tone: "muted" });
         }
-        output.push(...formatLs(path, arg));
-        if (args.length > 1 && index !== args.length - 1) {
+        output.push(...formatLs(path, arg, lsOptions));
+        if (targets.length > 1 && index !== targets.length - 1) {
           output.push({ text: "" });
         }
       });
@@ -188,6 +295,224 @@ export function executeCommand(input: string, cwd: string[], history: string[]):
         };
       }
       return { nextCwd: path, clear: false, lines: [] };
+    }
+    case "touch": {
+      const parsed = parseShortFlags(args, new Set(["a", "m", "c"]));
+      if (parsed.invalidFlag) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `touch: invalid option -- '${parsed.invalidFlag}'`, tone: "error" }]
+        };
+      }
+
+      if (parsed.operands.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: "touch: missing file operand", tone: "error" }]
+        };
+      }
+
+      const output: TerminalOutputLine[] = [];
+      parsed.operands.forEach((target) => {
+        const path = resolvePathSegments(cwd, target);
+        const existing = getNodeAtPath(path);
+
+        if (!existing && parsed.flags.has("c")) {
+          return;
+        }
+
+        const result = createFile(path);
+        if (result.ok) return;
+
+        if (result.reason === "is-directory") {
+          output.push({
+            text: `touch: cannot touch '${target}': Is a directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        if (result.reason === "not-found") {
+          output.push({
+            text: `touch: cannot touch '${target}': No such file or directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        output.push({
+          text: `touch: cannot touch '${target}': Invalid file name`,
+          tone: "error"
+        });
+      });
+
+      return { nextCwd: cwd, clear: false, lines: output };
+    }
+    case "mkdir": {
+      const parsed = parseShortFlags(args, new Set(["p"]));
+      if (parsed.invalidFlag) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `mkdir: invalid option -- '${parsed.invalidFlag}'`, tone: "error" }]
+        };
+      }
+
+      if (parsed.operands.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: "mkdir: missing operand", tone: "error" }]
+        };
+      }
+
+      const output: TerminalOutputLine[] = [];
+      parsed.operands.forEach((target) => {
+        const path = resolvePathSegments(cwd, target);
+        const result = createDirectory(path, parsed.flags.has("p"));
+        if (result.ok) return;
+
+        if (result.reason === "already-exists") {
+          output.push({
+            text: `mkdir: cannot create directory '${target}': File exists`,
+            tone: "error"
+          });
+          return;
+        }
+
+        if (result.reason === "not-found") {
+          output.push({
+            text: `mkdir: cannot create directory '${target}': No such file or directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        if (result.reason === "parent-not-directory" || result.reason === "not-directory") {
+          output.push({
+            text: `mkdir: cannot create directory '${target}': Not a directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        output.push({
+          text: `mkdir: cannot create directory '${target}': Invalid directory name`,
+          tone: "error"
+        });
+      });
+
+      return { nextCwd: cwd, clear: false, lines: output };
+    }
+    case "rm": {
+      const parsed = parseShortFlags(args, new Set(["r", "f"]));
+      if (parsed.invalidFlag) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `rm: invalid option -- '${parsed.invalidFlag}'`, tone: "error" }]
+        };
+      }
+
+      if (parsed.operands.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: "rm: missing operand", tone: "error" }]
+        };
+      }
+
+      const output: TerminalOutputLine[] = [];
+      parsed.operands.forEach((target) => {
+        const path = resolvePathSegments(cwd, target);
+        const result = removeNode(path, parsed.flags.has("r"));
+        if (result.ok) return;
+
+        if (result.reason === "not-found" && parsed.flags.has("f")) {
+          return;
+        }
+
+        if (result.reason === "not-found") {
+          output.push({
+            text: `rm: cannot remove '${target}': No such file or directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        if (result.reason === "is-directory") {
+          output.push({
+            text: `rm: cannot remove '${target}': Is a directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        output.push({
+          text: `rm: cannot remove '${target}': Operation not permitted`,
+          tone: "error"
+        });
+      });
+
+      return { nextCwd: cwd, clear: false, lines: output };
+    }
+    case "rmdir": {
+      const parsed = parseShortFlags(args, new Set<string>());
+      if (parsed.invalidFlag) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `rmdir: invalid option -- '${parsed.invalidFlag}'`, tone: "error" }]
+        };
+      }
+
+      if (parsed.operands.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: "rmdir: missing operand", tone: "error" }]
+        };
+      }
+
+      const output: TerminalOutputLine[] = [];
+      parsed.operands.forEach((target) => {
+        const path = resolvePathSegments(cwd, target);
+        const result = removeDirectory(path);
+        if (result.ok) return;
+
+        if (result.reason === "not-found") {
+          output.push({
+            text: `rmdir: failed to remove '${target}': No such file or directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        if (result.reason === "not-directory") {
+          output.push({
+            text: `rmdir: failed to remove '${target}': Not a directory`,
+            tone: "error"
+          });
+          return;
+        }
+
+        if (result.reason === "directory-not-empty") {
+          output.push({
+            text: `rmdir: failed to remove '${target}': Directory not empty`,
+            tone: "error"
+          });
+          return;
+        }
+
+        output.push({
+          text: `rmdir: failed to remove '${target}': Operation not permitted`,
+          tone: "error"
+        });
+      });
+
+      return { nextCwd: cwd, clear: false, lines: output };
     }
     case "pwd":
       return { nextCwd: cwd, clear: false, lines: [{ text: absolutePath(cwd) }] };

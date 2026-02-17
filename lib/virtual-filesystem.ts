@@ -12,6 +12,21 @@ export type VirtualDirectory = {
 
 export type VirtualNode = VirtualFile | VirtualDirectory;
 
+export type VfsMutationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | "invalid-name"
+        | "not-found"
+        | "already-exists"
+        | "not-directory"
+        | "parent-not-directory"
+        | "directory-not-empty"
+        | "is-directory"
+        | "cannot-remove-root";
+    };
+
 const readme = [
   "Remington Steele Portfolio Terminal",
   "----------------------------------",
@@ -248,6 +263,156 @@ export function getNodeAtPath(segments: string[]): VirtualNode | null {
     node = next;
   }
   return node;
+}
+
+function isValidNodeName(name: string): boolean {
+  return name.length > 0 && name !== "." && name !== ".." && !name.includes("/");
+}
+
+function getParentDirectory(
+  segments: string[]
+): { parent: VirtualDirectory; name: string } | { parent: null; name: null } {
+  if (segments.length === 0) {
+    return { parent: null, name: null };
+  }
+
+  const name = segments[segments.length - 1];
+  const parentNode = getNodeAtPath(segments.slice(0, -1));
+  if (!parentNode || parentNode.type !== "directory") {
+    return { parent: null, name: null };
+  }
+
+  return { parent: parentNode, name };
+}
+
+export function createFile(segments: string[]): VfsMutationResult {
+  if (segments.length === 0) {
+    return { ok: false, reason: "is-directory" };
+  }
+
+  const existingNode = getNodeAtPath(segments);
+  if (existingNode) {
+    if (existingNode.type === "directory") return { ok: false, reason: "is-directory" };
+    return { ok: true };
+  }
+
+  const parentInfo = getParentDirectory(segments);
+  if (!parentInfo.parent || !parentInfo.name) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  if (!isValidNodeName(parentInfo.name)) {
+    return { ok: false, reason: "invalid-name" };
+  }
+
+  parentInfo.parent.children[parentInfo.name] = {
+    type: "file",
+    content: ""
+  };
+  return { ok: true };
+}
+
+export function createDirectory(segments: string[], recursive = false): VfsMutationResult {
+  if (segments.length === 0) {
+    return recursive ? { ok: true } : { ok: false, reason: "already-exists" };
+  }
+
+  if (recursive) {
+    let node: VirtualNode = VFS_ROOT;
+    for (const segment of segments) {
+      if (!isValidNodeName(segment)) {
+        return { ok: false, reason: "invalid-name" };
+      }
+
+      if (node.type !== "directory") {
+        return { ok: false, reason: "parent-not-directory" };
+      }
+
+      const next = node.children[segment];
+      if (!next) {
+        const created: VirtualDirectory = { type: "directory", children: {} };
+        node.children[segment] = created;
+        node = created;
+        continue;
+      }
+
+      if (next.type !== "directory") {
+        return { ok: false, reason: "parent-not-directory" };
+      }
+      node = next;
+    }
+
+    return { ok: true };
+  }
+
+  const parentInfo = getParentDirectory(segments);
+  if (!parentInfo.parent || !parentInfo.name) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  if (!isValidNodeName(parentInfo.name)) {
+    return { ok: false, reason: "invalid-name" };
+  }
+
+  if (parentInfo.parent.children[parentInfo.name]) {
+    return { ok: false, reason: "already-exists" };
+  }
+
+  parentInfo.parent.children[parentInfo.name] = {
+    type: "directory",
+    children: {}
+  };
+  return { ok: true };
+}
+
+export function removeNode(segments: string[], recursive = false): VfsMutationResult {
+  if (segments.length === 0) {
+    return { ok: false, reason: "cannot-remove-root" };
+  }
+
+  const parentInfo = getParentDirectory(segments);
+  if (!parentInfo.parent || !parentInfo.name) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  const existingNode = parentInfo.parent.children[parentInfo.name];
+  if (!existingNode) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  if (existingNode.type === "directory" && !recursive) {
+    return { ok: false, reason: "is-directory" };
+  }
+
+  delete parentInfo.parent.children[parentInfo.name];
+  return { ok: true };
+}
+
+export function removeDirectory(segments: string[]): VfsMutationResult {
+  if (segments.length === 0) {
+    return { ok: false, reason: "cannot-remove-root" };
+  }
+
+  const parentInfo = getParentDirectory(segments);
+  if (!parentInfo.parent || !parentInfo.name) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  const existingNode = parentInfo.parent.children[parentInfo.name];
+  if (!existingNode) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  if (existingNode.type !== "directory") {
+    return { ok: false, reason: "not-directory" };
+  }
+
+  if (Object.keys(existingNode.children).length > 0) {
+    return { ok: false, reason: "directory-not-empty" };
+  }
+
+  delete parentInfo.parent.children[parentInfo.name];
+  return { ok: true };
 }
 
 export function getDirectoryEntries(node: VirtualDirectory): Array<{
