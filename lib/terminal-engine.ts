@@ -14,10 +14,12 @@ import {
 } from "@/lib/virtual-filesystem";
 
 export type OutputTone = "normal" | "error" | "muted";
+export type OutputSource = "ls";
 
 export type TerminalOutputLine = {
   text: string;
   tone?: OutputTone;
+  source?: OutputSource;
 };
 
 export type EditorLaunchRequest = {
@@ -187,9 +189,9 @@ function formatLs(
   if (node.type === "file") {
     if (options.longFormat) {
       const label = explicitLabel ?? path[path.length - 1] ?? absolutePath(path);
-      return [{ text: formatLongEntry(label, node) }];
+      return [{ text: formatLongEntry(label, node), source: "ls" }];
     }
-    return [{ text: explicitLabel ?? absolutePath(path) }];
+    return [{ text: explicitLabel ?? absolutePath(path), source: "ls" }];
   }
 
   const entries = getDirectoryEntries(node).filter(
@@ -201,14 +203,14 @@ function formatLs(
     if (options.showAll) {
       const parentPath = path.length > 0 ? path.slice(0, -1) : [];
       const parentNode = getNodeAtPath(parentPath);
-      lines.push({ text: formatLongEntry(".", node) });
+      lines.push({ text: formatLongEntry(".", node), source: "ls" });
       if (parentNode && parentNode.type === "directory") {
-        lines.push({ text: formatLongEntry("..", parentNode) });
+        lines.push({ text: formatLongEntry("..", parentNode), source: "ls" });
       }
     }
 
-    lines.push(...entries.map((entry) => ({ text: formatLongEntry(entry.name, entry.node) })));
-    return lines.length > 0 ? lines : [{ text: "" }];
+    lines.push(...entries.map((entry) => ({ text: formatLongEntry(entry.name, entry.node), source: "ls" as const })));
+    return lines.length > 0 ? lines : [{ text: "", source: "ls" }];
   }
 
   const entryNames: string[] = [];
@@ -220,7 +222,7 @@ function formatLs(
     ...entries.map((entry) => `${entry.name}${entry.node.type === "directory" ? "/" : ""}`)
   );
 
-  return [{ text: entryNames.join("  ") }];
+  return [{ text: entryNames.join("  "), source: "ls" }];
 }
 
 function readFiles(commandName: "cat" | "less", cwd: string[], args: string[]): TerminalOutputLine[] {

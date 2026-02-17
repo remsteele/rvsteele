@@ -12,6 +12,7 @@ import {
   executeCommand,
   type EditorLaunchRequest,
   type OpenFileRequest,
+  type OutputSource,
   type PromptParts,
   type PythonRunRequest,
   type OutputTone
@@ -31,6 +32,7 @@ type TextRenderedLine = {
   kind: "text";
   text: string;
   tone: OutputTone;
+  source?: OutputSource;
 };
 
 type PromptRenderedLine = {
@@ -74,7 +76,9 @@ export function TerminalEmulator() {
 
   const promptParts = useMemo(() => buildPromptParts(cwd), [cwd]);
 
-  const appendLines = (newLines: Array<{ text: string; tone?: OutputTone }>) => {
+  const appendLines = (
+    newLines: Array<{ text: string; tone?: OutputTone; source?: OutputSource }>
+  ) => {
     if (newLines.length === 0) return;
     setLines((previous) => [
       ...previous,
@@ -82,7 +86,8 @@ export function TerminalEmulator() {
         id: nextLineId.current++,
         kind: "text" as const,
         text: line.text,
-        tone: line.tone ?? "normal"
+        tone: line.tone ?? "normal",
+        source: line.source
       }))
     ]);
   };
@@ -361,6 +366,43 @@ export function TerminalEmulator() {
     </>
   );
 
+  const isDirectoryToken = (token: string): boolean => {
+    const trimmed = token.trim();
+    return trimmed === "." || trimmed === ".." || trimmed.endsWith("/");
+  };
+
+  const renderLsLine = (text: string) => {
+    const longFormatMatch = text.match(/^(.*\s)(\S+)$/);
+    if (longFormatMatch && /^[d-][rwx-]{9}\s/.test(text)) {
+      const [, prefix, entry] = longFormatMatch;
+      return (
+        <>
+          <span>{prefix}</span>
+          <span className={isDirectoryToken(entry) ? "text-[#4f8ff7]" : undefined}>{entry}</span>
+        </>
+      );
+    }
+
+    const parts = text.split(/(\s{2,})/);
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (/^\s+$/.test(part)) {
+            return <span key={`ls-space-${index}`}>{part}</span>;
+          }
+          return (
+            <span
+              key={`ls-entry-${index}`}
+              className={isDirectoryToken(part) ? "text-[#4f8ff7]" : undefined}
+            >
+              {part}
+            </span>
+          );
+        })}
+      </>
+    );
+  };
+
   return (
     <div
       className="terminal-font flex h-full w-full flex-col bg-[#0a0a0a] text-[14px] leading-6 text-slate-200 selection:bg-emerald-700/70 selection:text-white"
@@ -384,7 +426,7 @@ export function TerminalEmulator() {
 
           return (
             <div key={line.id} className={`whitespace-pre-wrap ${toneClass(line.tone)}`}>
-              {line.text}
+              {line.source === "ls" && line.tone !== "error" ? renderLsLine(line.text) : line.text}
             </div>
           );
         })}
