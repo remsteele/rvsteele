@@ -7,6 +7,17 @@ npm install
 npm run dev
 ```
 
+## Run with Docker
+```bash
+docker build -t rvsteele-portfolio .
+docker run --rm -p 3000:3000 rvsteele-portfolio
+```
+
+Or with compose:
+```bash
+docker compose up --build
+```
+
 ## What it includes
 - Simulated Linux-like terminal UI
 - Virtual filesystem with read/write commands
