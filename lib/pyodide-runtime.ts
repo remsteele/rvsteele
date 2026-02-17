@@ -1,98 +1,17 @@
-type PyodideStdIo = {
-  batched?: (message: string) => void;
+type PythonWorkerMessage =
+  | { type: "status"; runId: number; status: "loading" | "ready" }
+  | { type: "stdout"; runId: number; text: string }
+  | { type: "stderr"; runId: number; text: string }
+  | { type: "done"; runId: number; exitCode: number }
+  | { type: "error"; runId: number; message: string };
+
+type PythonWorkerRunRequest = {
+  type: "run";
+  runId: number;
+  source: string;
+  filename: string;
+  argv: string[];
 };
-
-type PyodideGlobals = {
-  set: (name: string, value: unknown) => void;
-  delete: (name: string) => void;
-};
-
-type PyodideRuntime = {
-  runPythonAsync: (code: string) => Promise<unknown>;
-  setStdout: (options: PyodideStdIo) => void;
-  setStderr: (options: PyodideStdIo) => void;
-  globals: PyodideGlobals;
-};
-
-declare global {
-  interface Window {
-    loadPyodide?: (options: { indexURL: string }) => Promise<PyodideRuntime>;
-    __pyodideRuntimePromise?: Promise<PyodideRuntime>;
-  }
-}
-
-const PYODIDE_VERSION = "0.27.5";
-const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
-const PYODIDE_SCRIPT_URL = `${PYODIDE_INDEX_URL}pyodide.js`;
-
-function splitOutput(chunks: string[]): string[] {
-  const lines: string[] = [];
-
-  chunks.forEach((chunk) => {
-    const normalized = chunk.replace(/\r\n/g, "\n");
-    normalized.split("\n").forEach((line) => {
-      if (line.length > 0) {
-        lines.push(line);
-      }
-    });
-  });
-
-  return lines;
-}
-
-async function ensurePyodideScript(): Promise<void> {
-  if (typeof window === "undefined") return;
-  if (window.loadPyodide) return;
-
-  await new Promise<void>((resolve, reject) => {
-    const scriptId = "pyodide-runtime-script";
-    const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
-
-    const onLoad = () => {
-      if (window.loadPyodide) {
-        resolve();
-        return;
-      }
-      reject(new Error("Pyodide script loaded but loadPyodide is unavailable"));
-    };
-
-    const onError = () => {
-      reject(new Error("Failed to load Pyodide script"));
-    };
-
-    if (existing) {
-      existing.addEventListener("load", onLoad, { once: true });
-      existing.addEventListener("error", onError, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = scriptId;
-    script.src = `${PYODIDE_SCRIPT_URL}?v=1`;
-    script.async = true;
-    script.addEventListener("load", onLoad, { once: true });
-    script.addEventListener("error", onError, { once: true });
-    document.head.appendChild(script);
-  });
-}
-
-export async function loadPyodideRuntime(): Promise<PyodideRuntime> {
-  if (typeof window === "undefined") {
-    throw new Error("Pyodide runtime is only available in the browser");
-  }
-
-  if (!window.__pyodideRuntimePromise) {
-    window.__pyodideRuntimePromise = (async () => {
-      await ensurePyodideScript();
-      if (!window.loadPyodide) {
-        throw new Error("Pyodide runtime loader is unavailable");
-      }
-      return window.loadPyodide({ indexURL: PYODIDE_INDEX_URL });
-    })();
-  }
-
-  return window.__pyodideRuntimePromise;
-}
 
 export type PythonRunResult = {
   stdout: string[];
@@ -100,68 +19,160 @@ export type PythonRunResult = {
   exitCode: number;
 };
 
-export async function runPythonScript(
+type PythonStreamHandlers = {
+  onStatus?: (status: "loading" | "ready") => void;
+  onStdout?: (line: string) => void;
+  onStderr?: (line: string) => void;
+};
+
+type ActiveRun = {
+  runId: number;
+  stdout: string[];
+  stderr: string[];
+  handlers?: PythonStreamHandlers;
+  resolve: (result: PythonRunResult) => void;
+  reject: (error: Error) => void;
+};
+
+export type PythonStreamingRun = {
+  runId: number;
+  promise: Promise<PythonRunResult>;
+};
+
+let worker: Worker | null = null;
+let nextRunId = 1;
+const activeRuns = new Map<number, ActiveRun>();
+
+function normalizeChunk(chunk: string): string {
+  return chunk.replace(/\r\n/g, "\n");
+}
+
+function emitStreamChunk(run: ActiveRun, stream: "stdout" | "stderr", chunk: string) {
+  const list = stream === "stdout" ? run.stdout : run.stderr;
+  const handler = stream === "stdout" ? run.handlers?.onStdout : run.handlers?.onStderr;
+  const normalized = normalizeChunk(chunk);
+  if (normalized.length === 0) return;
+
+  const parts = normalized.split("\n");
+  parts.forEach((part) => {
+    if (part.length === 0) return;
+    list.push(part);
+    handler?.(part);
+  });
+}
+
+function rejectAllRuns(message: string) {
+  activeRuns.forEach((run) => {
+    run.reject(new Error(message));
+  });
+  activeRuns.clear();
+}
+
+function resetWorker() {
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
+}
+
+function ensureWorker(): Worker {
+  if (worker) return worker;
+
+  const nextWorker = new Worker("/workers/pyodide-worker.js");
+  nextWorker.onmessage = (event: MessageEvent<PythonWorkerMessage>) => {
+    const message = event.data;
+    const run = activeRuns.get(message.runId);
+    if (!run) return;
+
+    if (message.type === "status") {
+      run.handlers?.onStatus?.(message.status);
+      return;
+    }
+
+    if (message.type === "stdout") {
+      emitStreamChunk(run, "stdout", message.text);
+      return;
+    }
+
+    if (message.type === "stderr") {
+      emitStreamChunk(run, "stderr", message.text);
+      return;
+    }
+
+    if (message.type === "done") {
+      run.resolve({
+        stdout: run.stdout,
+        stderr: run.stderr,
+        exitCode: message.exitCode
+      });
+      activeRuns.delete(message.runId);
+      return;
+    }
+
+    if (message.type === "error") {
+      run.reject(new Error(message.message));
+      activeRuns.delete(message.runId);
+    }
+  };
+
+  nextWorker.onerror = () => {
+    rejectAllRuns("Python worker crashed");
+    resetWorker();
+  };
+
+  worker = nextWorker;
+  return nextWorker;
+}
+
+export function runPythonScriptStreaming(
   source: string,
   filename: string,
-  argv: string[]
-): Promise<PythonRunResult> {
-  const pyodide = await loadPyodideRuntime();
-  const stdoutChunks: string[] = [];
-  const stderrChunks: string[] = [];
+  argv: string[],
+  handlers?: PythonStreamHandlers
+): PythonStreamingRun {
+  const currentWorker = ensureWorker();
+  const runId = nextRunId++;
 
-  pyodide.setStdout({
-    batched: (message: string) => stdoutChunks.push(message)
+  const promise = new Promise<PythonRunResult>((resolve, reject) => {
+    activeRuns.set(runId, {
+      runId,
+      stdout: [],
+      stderr: [],
+      handlers,
+      resolve,
+      reject
+    });
   });
-  pyodide.setStderr({
-    batched: (message: string) => stderrChunks.push(message)
-  });
 
-  pyodide.globals.set("__rv_py_code", source);
-  pyodide.globals.set("__rv_py_filename", filename);
-  pyodide.globals.set("__rv_py_argv", argv);
+  const payload: PythonWorkerRunRequest = {
+    type: "run",
+    runId,
+    source,
+    filename,
+    argv
+  };
+  currentWorker.postMessage(payload);
 
-  let exitCode = 1;
-  try {
-    const value = await pyodide.runPythonAsync(`
-import sys
-import traceback
+  return { runId, promise };
+}
 
-_rv_exit_code = 0
-_rv_globals = {"__name__": "__main__", "__file__": __rv_py_filename}
-_rv_old_argv = sys.argv
-sys.argv = [__rv_py_filename] + list(__rv_py_argv)
+export function interruptPythonRun(runId?: number): boolean {
+  if (!worker) return false;
 
-try:
-    exec(compile(__rv_py_code, __rv_py_filename, "exec"), _rv_globals)
-except SystemExit as _rv_exc:
-    _rv_code = _rv_exc.code
-    if _rv_code is None:
-        _rv_exit_code = 0
-    elif isinstance(_rv_code, int):
-        _rv_exit_code = _rv_code
-    else:
-        print(_rv_code, file=sys.stderr)
-        _rv_exit_code = 1
-except Exception:
-    traceback.print_exc()
-    _rv_exit_code = 1
-finally:
-    sys.argv = _rv_old_argv
+  const hasMatchingRun =
+    typeof runId === "number" ? activeRuns.has(runId) : activeRuns.size > 0;
+  if (!hasMatchingRun) return false;
 
-_rv_exit_code
-`);
-
-    const parsed = Number(value);
-    exitCode = Number.isFinite(parsed) ? parsed : 1;
-  } finally {
-    pyodide.globals.delete("__rv_py_code");
-    pyodide.globals.delete("__rv_py_filename");
-    pyodide.globals.delete("__rv_py_argv");
+  if (typeof runId === "number") {
+    const run = activeRuns.get(runId);
+    if (run) {
+      run.reject(new Error("Python execution interrupted"));
+      activeRuns.delete(runId);
+    }
+  } else {
+    rejectAllRuns("Python execution interrupted");
   }
 
-  return {
-    stdout: splitOutput(stdoutChunks),
-    stderr: splitOutput(stderrChunks),
-    exitCode
-  };
+  resetWorker();
+  return true;
 }

@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VimEditor } from "@/components/vim-editor";
-import { loadPyodideRuntime, runPythonScript } from "@/lib/pyodide-runtime";
+import {
+  interruptPythonRun,
+  runPythonScriptStreaming
+} from "@/lib/pyodide-runtime";
 import {
   buildPrompt,
   completeInput,
@@ -45,9 +48,8 @@ export function TerminalEmulator() {
   const nextLineId = useRef(lines.length + 1);
   const viewportRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const pyodideReadyRef = useRef(false);
   const currentPythonRunIdRef = useRef(0);
-  const interruptedPythonRunsRef = useRef<Set<number>>(new Set());
+  const interruptedPythonRunIdRef = useRef<number | null>(null);
 
   const prompt = useMemo(() => buildPrompt(cwd), [cwd]);
 
@@ -73,9 +75,6 @@ export function TerminalEmulator() {
   };
 
   const executePythonCommand = async (request: PythonRunRequest) => {
-    const runId = currentPythonRunIdRef.current + 1;
-    currentPythonRunIdRef.current = runId;
-
     const node = getNodeAtPath(request.path);
     if (!node) {
       appendLines([
@@ -97,32 +96,44 @@ export function TerminalEmulator() {
       return;
     }
 
+    const streamingRun = runPythonScriptStreaming(
+      node.content,
+      absolutePath(request.path),
+      request.argv,
+      {
+        onStatus: (status) => {
+          if (status === "loading") {
+            appendLines([{ text: "Loading Pyodide runtime...", tone: "muted" }]);
+          }
+        },
+        onStdout: (line) => {
+          appendLines([{ text: line }]);
+        },
+        onStderr: (line) => {
+          appendLines([{ text: line, tone: "error" }]);
+        }
+      }
+    );
+    const runId = streamingRun.runId;
+    currentPythonRunIdRef.current = runId;
+
     try {
-      if (!pyodideReadyRef.current) {
-        appendLines([{ text: "Loading Pyodide runtime...", tone: "muted" }]);
-        await loadPyodideRuntime();
-        pyodideReadyRef.current = true;
-      }
+      const result = await streamingRun.promise;
 
-      const result = await runPythonScript(node.content, absolutePath(request.path), request.argv);
-
-      if (interruptedPythonRunsRef.current.has(runId)) {
-        interruptedPythonRunsRef.current.delete(runId);
+      if (interruptedPythonRunIdRef.current === runId) {
+        interruptedPythonRunIdRef.current = null;
         return;
-      }
-
-      if (result.stdout.length > 0) {
-        appendLines(result.stdout.map((text) => ({ text })));
-      }
-
-      if (result.stderr.length > 0) {
-        appendLines(result.stderr.map((text) => ({ text, tone: "error" as const })));
       }
 
       if (result.exitCode !== 0) {
         appendLines([{ text: `[python exited with code ${result.exitCode}]`, tone: "muted" }]);
       }
     } catch (error) {
+      if (interruptedPythonRunIdRef.current === runId) {
+        interruptedPythonRunIdRef.current = null;
+        return;
+      }
+
       const message = error instanceof Error ? error.message : "Unknown Python runtime error";
       appendLines([
         {
@@ -207,13 +218,12 @@ export function TerminalEmulator() {
       if (runningPython) {
         event.preventDefault();
         const runId = currentPythonRunIdRef.current;
-        if (!interruptedPythonRunsRef.current.has(runId)) {
-          interruptedPythonRunsRef.current.add(runId);
-          appendLines([
-            { text: "^C", tone: "muted" },
-            { text: "[python interrupted]", tone: "muted" }
-          ]);
-        }
+        interruptedPythonRunIdRef.current = runId;
+        interruptPythonRun(runId);
+        appendLines([
+          { text: "^C", tone: "muted" },
+          { text: "[python interrupted]", tone: "muted" }
+        ]);
         setRunningPython(false);
         window.requestAnimationFrame(() => {
           inputRef.current?.focus({ preventScroll: true });
