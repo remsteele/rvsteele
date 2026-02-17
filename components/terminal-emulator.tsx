@@ -44,6 +44,7 @@ export function TerminalEmulator() {
   const [historyDraft, setHistoryDraft] = useState("");
   const [activeEditor, setActiveEditor] = useState<EditorLaunchRequest | null>(null);
   const [runningPython, setRunningPython] = useState(false);
+  const [tabSuggestions, setTabSuggestions] = useState<string[]>([]);
 
   const nextLineId = useRef(lines.length + 1);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -179,6 +180,7 @@ export function TerminalEmulator() {
     setInput("");
     setHistoryIndex(null);
     setHistoryDraft("");
+    setTabSuggestions([]);
 
     if (result.pythonRun) {
       setRunningPython(true);
@@ -193,6 +195,7 @@ export function TerminalEmulator() {
     setInput("");
     setHistoryIndex(null);
     setHistoryDraft("");
+    setTabSuggestions([]);
   };
 
   const closeEditor = useCallback(() => {
@@ -261,86 +264,98 @@ export function TerminalEmulator() {
         ))}
 
         {!runningPython && (
-          <div className="flex items-center gap-2 whitespace-pre-wrap text-slate-100">
-            <span>{prompt}</span>
-            <input
-              ref={inputRef}
-              data-terminal-input="true"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  runInput();
-                  return;
-                }
+          <>
+            <div className="flex items-center gap-2 whitespace-pre-wrap text-slate-100">
+              <span>{prompt}</span>
+              <input
+                ref={inputRef}
+                data-terminal-input="true"
+                value={input}
+                onChange={(event) => {
+                  setInput(event.target.value);
+                  setTabSuggestions([]);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Tab") {
+                    setTabSuggestions([]);
+                  }
 
-                if (event.ctrlKey && event.key.toLowerCase() === "c") {
-                  event.preventDefault();
-                  interruptInput();
-                  return;
-                }
-
-                if (event.ctrlKey && event.key.toLowerCase() === "l") {
-                  event.preventDefault();
-                  clearScreen();
-                  return;
-                }
-
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  if (history.length === 0) return;
-                  if (historyIndex === null) {
-                    setHistoryDraft(input);
-                    const nextIndex = history.length - 1;
-                    setHistoryIndex(nextIndex);
-                    setInput(history[nextIndex]);
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    runInput();
                     return;
                   }
-                  if (historyIndex > 0) {
-                    const nextIndex = historyIndex - 1;
-                    setHistoryIndex(nextIndex);
-                    setInput(history[nextIndex]);
-                  }
-                  return;
-                }
 
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  if (historyIndex === null) return;
-                  if (historyIndex < history.length - 1) {
-                    const nextIndex = historyIndex + 1;
-                    setHistoryIndex(nextIndex);
-                    setInput(history[nextIndex]);
+                  if (event.ctrlKey && event.key.toLowerCase() === "c") {
+                    event.preventDefault();
+                    interruptInput();
                     return;
                   }
-                  setHistoryIndex(null);
-                  setInput(historyDraft);
-                  return;
-                }
 
-                if (event.key === "Tab") {
-                  event.preventDefault();
-                  const completion = completeInput(input, cwd);
-                  setInput(completion.nextInput);
-                  if (completion.suggestions.length > 1) {
-                    appendLines([
-                      {
-                        text: completion.suggestions.join("  "),
-                        tone: "muted"
-                      }
-                    ]);
+                  if (event.ctrlKey && event.key.toLowerCase() === "l") {
+                    event.preventDefault();
+                    clearScreen();
+                    return;
                   }
-                }
-              }}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              disabled={activeEditor !== null}
-              className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none caret-emerald-400"
-            />
-          </div>
+
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    if (history.length === 0) return;
+                    if (historyIndex === null) {
+                      setHistoryDraft(input);
+                      const nextIndex = history.length - 1;
+                      setHistoryIndex(nextIndex);
+                      setInput(history[nextIndex]);
+                      return;
+                    }
+                    if (historyIndex > 0) {
+                      const nextIndex = historyIndex - 1;
+                      setHistoryIndex(nextIndex);
+                      setInput(history[nextIndex]);
+                    }
+                    return;
+                  }
+
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    if (historyIndex === null) return;
+                    if (historyIndex < history.length - 1) {
+                      const nextIndex = historyIndex + 1;
+                      setHistoryIndex(nextIndex);
+                      setInput(history[nextIndex]);
+                      return;
+                    }
+                    setHistoryIndex(null);
+                    setInput(historyDraft);
+                    return;
+                  }
+
+                  if (event.key === "Tab") {
+                    event.preventDefault();
+                    const completion = completeInput(input, cwd);
+                    setInput(completion.nextInput);
+                    if (completion.suggestions.length > 1) {
+                      setTabSuggestions(completion.suggestions);
+                    } else {
+                      setTabSuggestions([]);
+                    }
+                  }
+                }}
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                disabled={activeEditor !== null}
+                className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none caret-emerald-400"
+              />
+            </div>
+
+            {tabSuggestions.length > 1 && (
+              <div className="mt-1 whitespace-pre-wrap text-slate-500">
+                {tabSuggestions.join("  ")}
+              </div>
+            )}
+          </>
         )}
       </div>
 
