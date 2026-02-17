@@ -25,7 +25,8 @@ body {
 }
 
 .terminal-font {
-  font-family: "IBM Plex Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-family: "SF Mono", "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 .signature-font {

@@ -96,7 +96,7 @@ export function DraggableTerminalWindow({ children }: { children: React.ReactNod
           <span className="h-3 w-3 rounded-full bg-[#ff5f56]" />
           <span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
           <span className="h-3 w-3 rounded-full bg-[#27c93f]" />
-          <span className="ml-3 font-sans text-xs text-slate-400">remington@portfolio - zsh</span>
+          <span className="terminal-font ml-3 text-xs text-slate-400">remington@portfolio - zsh</span>
         </div>
 
         <div className="min-h-0 flex-1">{children}</div>

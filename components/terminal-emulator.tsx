@@ -7,20 +7,31 @@ import {
   runPythonScriptStreaming
 } from "@/lib/pyodide-runtime";
 import {
-  buildPrompt,
+  buildPromptParts,
   completeInput,
   executeCommand,
   type EditorLaunchRequest,
+  type PromptParts,
   type PythonRunRequest,
   type OutputTone
 } from "@/lib/terminal-engine";
 import { HOME_PATH, absolutePath, getNodeAtPath, writeFile } from "@/lib/virtual-filesystem";
 
-type RenderedLine = {
+type TextRenderedLine = {
   id: number;
+  kind: "text";
   text: string;
   tone: OutputTone;
 };
+
+type PromptRenderedLine = {
+  id: number;
+  kind: "prompt";
+  prompt: PromptParts;
+  command: string;
+};
+
+type RenderedLine = TextRenderedLine | PromptRenderedLine;
 
 const WELCOME_LINES = [
   "Portfolio shell initialized.",
@@ -36,7 +47,7 @@ function toneClass(tone: OutputTone): string {
 export function TerminalEmulator() {
   const [cwd, setCwd] = useState<string[]>([...HOME_PATH]);
   const [lines, setLines] = useState<RenderedLine[]>(
-    WELCOME_LINES.map((text, index) => ({ id: index + 1, text, tone: "muted" }))
+    WELCOME_LINES.map((text, index) => ({ id: index + 1, kind: "text", text, tone: "muted" }))
   );
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -52,7 +63,7 @@ export function TerminalEmulator() {
   const currentPythonRunIdRef = useRef(0);
   const interruptedPythonRunIdRef = useRef<number | null>(null);
 
-  const prompt = useMemo(() => buildPrompt(cwd), [cwd]);
+  const promptParts = useMemo(() => buildPromptParts(cwd), [cwd]);
 
   const appendLines = (newLines: Array<{ text: string; tone?: OutputTone }>) => {
     if (newLines.length === 0) return;
@@ -60,9 +71,22 @@ export function TerminalEmulator() {
       ...previous,
       ...newLines.map((line) => ({
         id: nextLineId.current++,
+        kind: "text" as const,
         text: line.text,
         tone: line.tone ?? "normal"
       }))
+    ]);
+  };
+
+  const appendPromptLine = (prompt: PromptParts, command: string) => {
+    setLines((previous) => [
+      ...previous,
+      {
+        id: nextLineId.current++,
+        kind: "prompt",
+        prompt,
+        command
+      }
     ]);
   };
 
@@ -156,7 +180,7 @@ export function TerminalEmulator() {
     if (activeEditor || runningPython) return;
 
     const command = input;
-    appendLines([{ text: `${prompt}${command.length > 0 ? ` ${command}` : ""}` }]);
+    appendPromptLine(promptParts, command);
 
     const trimmed = command.trim();
     const nextHistory = trimmed.length > 0 ? [...history, command] : history;
@@ -191,7 +215,7 @@ export function TerminalEmulator() {
   const interruptInput = () => {
     if (activeEditor || runningPython) return;
 
-    appendLines([{ text: `${prompt}${input.length > 0 ? ` ${input}` : ""}^C` }]);
+    appendPromptLine(promptParts, `${input}^C`);
     setInput("");
     setHistoryIndex(null);
     setHistoryDraft("");
@@ -246,6 +270,15 @@ export function TerminalEmulator() {
     viewport.scrollTop = viewport.scrollHeight;
   }, [lines, input]);
 
+  const renderPrompt = (prompt: PromptParts) => (
+    <>
+      <span className="text-[#8ae234]">{prompt.userHost}</span>
+      <span className="text-slate-200">:</span>
+      <span className="text-[#729fcf]">{prompt.path}</span>
+      <span className="text-slate-200">{prompt.symbol}</span>
+    </>
+  );
+
   return (
     <div
       className="terminal-font flex h-full w-full flex-col bg-[#0a0a0a] text-[14px] leading-6 text-slate-200 selection:bg-emerald-700/70 selection:text-white"
@@ -257,16 +290,27 @@ export function TerminalEmulator() {
         ref={viewportRef}
         className="flex-1 overflow-y-auto p-4 md:p-5 select-text"
       >
-        {lines.map((line) => (
-          <div key={line.id} className={`whitespace-pre-wrap ${toneClass(line.tone)}`}>
-            {line.text}
-          </div>
-        ))}
+        {lines.map((line) => {
+          if (line.kind === "prompt") {
+            return (
+              <div key={line.id} className="whitespace-pre-wrap text-slate-100">
+                {renderPrompt(line.prompt)}
+                {line.command.length > 0 ? ` ${line.command}` : ""}
+              </div>
+            );
+          }
+
+          return (
+            <div key={line.id} className={`whitespace-pre-wrap ${toneClass(line.tone)}`}>
+              {line.text}
+            </div>
+          );
+        })}
 
         {!runningPython && (
           <>
             <div className="flex items-center gap-2 whitespace-pre-wrap text-slate-100">
-              <span>{prompt}</span>
+              <span>{renderPrompt(promptParts)}</span>
               <input
                 ref={inputRef}
                 data-terminal-input="true"

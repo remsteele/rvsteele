@@ -46,6 +46,12 @@ export type CompletionResult = {
   suggestions: string[];
 };
 
+export type PromptParts = {
+  userHost: string;
+  path: string;
+  symbol: "$";
+};
+
 const COMMANDS = [
   "help",
   "ls",
@@ -253,7 +259,16 @@ function readFiles(commandName: "cat" | "less", cwd: string[], args: string[]): 
 }
 
 export function buildPrompt(cwd: string[]): string {
-  return `${TERMINAL_CONFIG.username}@${TERMINAL_CONFIG.hostname}:${promptPath(cwd)}$`;
+  const parts = buildPromptParts(cwd);
+  return `${parts.userHost}:${parts.path}${parts.symbol}`;
+}
+
+export function buildPromptParts(cwd: string[]): PromptParts {
+  return {
+    userHost: `${TERMINAL_CONFIG.username}@${TERMINAL_CONFIG.hostname}`,
+    path: promptPath(cwd),
+    symbol: "$"
+  };
 }
 
 export function executeCommand(input: string, cwd: string[], history: string[]): ExecutionResult {
