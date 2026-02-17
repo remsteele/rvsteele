@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VimEditor } from "@/components/vim-editor";
+import { loadPyodideRuntime, runPythonScript } from "@/lib/pyodide-runtime";
 import {
   buildPrompt,
   completeInput,
   executeCommand,
   type EditorLaunchRequest,
+  type PythonRunRequest,
   type OutputTone
 } from "@/lib/terminal-engine";
-import { HOME_PATH, writeFile } from "@/lib/virtual-filesystem";
+import { HOME_PATH, absolutePath, getNodeAtPath, writeFile } from "@/lib/virtual-filesystem";
 
 type RenderedLine = {
   id: number;
@@ -38,10 +40,14 @@ export function TerminalEmulator() {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [historyDraft, setHistoryDraft] = useState("");
   const [activeEditor, setActiveEditor] = useState<EditorLaunchRequest | null>(null);
+  const [runningPython, setRunningPython] = useState(false);
 
   const nextLineId = useRef(lines.length + 1);
   const viewportRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pyodideReadyRef = useRef(false);
+  const currentPythonRunIdRef = useRef(0);
+  const interruptedPythonRunsRef = useRef<Set<number>>(new Set());
 
   const prompt = useMemo(() => buildPrompt(cwd), [cwd]);
 
@@ -62,12 +68,80 @@ export function TerminalEmulator() {
   };
 
   const focusShellInput = () => {
-    if (activeEditor) return;
+    if (activeEditor || runningPython) return;
     inputRef.current?.focus({ preventScroll: true });
   };
 
-  const runInput = () => {
-    if (activeEditor) return;
+  const executePythonCommand = async (request: PythonRunRequest) => {
+    const runId = currentPythonRunIdRef.current + 1;
+    currentPythonRunIdRef.current = runId;
+
+    const node = getNodeAtPath(request.path);
+    if (!node) {
+      appendLines([
+        {
+          text: `python3: can't open file '${request.displayTarget}': No such file or directory`,
+          tone: "error"
+        }
+      ]);
+      return;
+    }
+
+    if (node.type !== "file") {
+      appendLines([
+        {
+          text: `python3: can't open file '${request.displayTarget}': Is a directory`,
+          tone: "error"
+        }
+      ]);
+      return;
+    }
+
+    try {
+      if (!pyodideReadyRef.current) {
+        appendLines([{ text: "Loading Pyodide runtime...", tone: "muted" }]);
+        await loadPyodideRuntime();
+        pyodideReadyRef.current = true;
+      }
+
+      const result = await runPythonScript(node.content, absolutePath(request.path), request.argv);
+
+      if (interruptedPythonRunsRef.current.has(runId)) {
+        interruptedPythonRunsRef.current.delete(runId);
+        return;
+      }
+
+      if (result.stdout.length > 0) {
+        appendLines(result.stdout.map((text) => ({ text })));
+      }
+
+      if (result.stderr.length > 0) {
+        appendLines(result.stderr.map((text) => ({ text, tone: "error" as const })));
+      }
+
+      if (result.exitCode !== 0) {
+        appendLines([{ text: `[python exited with code ${result.exitCode}]`, tone: "muted" }]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Python runtime error";
+      appendLines([
+        {
+          text: `python3: failed to execute '${request.displayTarget}': ${message}`,
+          tone: "error"
+        }
+      ]);
+    } finally {
+      if (currentPythonRunIdRef.current === runId) {
+        setRunningPython(false);
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus({ preventScroll: true });
+        });
+      }
+    }
+  };
+
+  const runInput = async () => {
+    if (activeEditor || runningPython) return;
 
     const command = input;
     appendLines([{ text: `${prompt}${command.length > 0 ? ` ${command}` : ""}` }]);
@@ -94,10 +168,15 @@ export function TerminalEmulator() {
     setInput("");
     setHistoryIndex(null);
     setHistoryDraft("");
+
+    if (result.pythonRun) {
+      setRunningPython(true);
+      await executePythonCommand(result.pythonRun);
+    }
   };
 
   const interruptInput = () => {
-    if (activeEditor) return;
+    if (activeEditor || runningPython) return;
 
     appendLines([{ text: `${prompt}${input.length > 0 ? ` ${input}` : ""}^C` }]);
     setInput("");
@@ -105,12 +184,48 @@ export function TerminalEmulator() {
     setHistoryDraft("");
   };
 
-  const closeEditor = () => {
+  const closeEditor = useCallback(() => {
     setActiveEditor(null);
     window.requestAnimationFrame(() => {
       inputRef.current?.focus({ preventScroll: true });
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    const handleCtrlC = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.key.toLowerCase() !== "c") {
+        return;
+      }
+
+      if (activeEditor) {
+        event.preventDefault();
+        appendLines([{ text: "^C", tone: "muted" }]);
+        closeEditor();
+        return;
+      }
+
+      if (runningPython) {
+        event.preventDefault();
+        const runId = currentPythonRunIdRef.current;
+        if (!interruptedPythonRunsRef.current.has(runId)) {
+          interruptedPythonRunsRef.current.add(runId);
+          appendLines([
+            { text: "^C", tone: "muted" },
+            { text: "[python interrupted]", tone: "muted" }
+          ]);
+        }
+        setRunningPython(false);
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus({ preventScroll: true });
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleCtrlC, true);
+    return () => {
+      window.removeEventListener("keydown", handleCtrlC, true);
+    };
+  }, [activeEditor, closeEditor, runningPython]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -135,86 +250,88 @@ export function TerminalEmulator() {
           </div>
         ))}
 
-        <div className="flex items-center gap-2 whitespace-pre-wrap text-slate-100">
-          <span>{prompt}</span>
-          <input
-            ref={inputRef}
-            data-terminal-input="true"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                runInput();
-                return;
-              }
-
-              if (event.ctrlKey && event.key.toLowerCase() === "c") {
-                event.preventDefault();
-                interruptInput();
-                return;
-              }
-
-              if (event.ctrlKey && event.key.toLowerCase() === "l") {
-                event.preventDefault();
-                clearScreen();
-                return;
-              }
-
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                if (history.length === 0) return;
-                if (historyIndex === null) {
-                  setHistoryDraft(input);
-                  const nextIndex = history.length - 1;
-                  setHistoryIndex(nextIndex);
-                  setInput(history[nextIndex]);
+        {!runningPython && (
+          <div className="flex items-center gap-2 whitespace-pre-wrap text-slate-100">
+            <span>{prompt}</span>
+            <input
+              ref={inputRef}
+              data-terminal-input="true"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  runInput();
                   return;
                 }
-                if (historyIndex > 0) {
-                  const nextIndex = historyIndex - 1;
-                  setHistoryIndex(nextIndex);
-                  setInput(history[nextIndex]);
-                }
-                return;
-              }
 
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                if (historyIndex === null) return;
-                if (historyIndex < history.length - 1) {
-                  const nextIndex = historyIndex + 1;
-                  setHistoryIndex(nextIndex);
-                  setInput(history[nextIndex]);
+                if (event.ctrlKey && event.key.toLowerCase() === "c") {
+                  event.preventDefault();
+                  interruptInput();
                   return;
                 }
-                setHistoryIndex(null);
-                setInput(historyDraft);
-                return;
-              }
 
-              if (event.key === "Tab") {
-                event.preventDefault();
-                const completion = completeInput(input, cwd);
-                setInput(completion.nextInput);
-                if (completion.suggestions.length > 1) {
-                  appendLines([
-                    {
-                      text: completion.suggestions.join("  "),
-                      tone: "muted"
-                    }
-                  ]);
+                if (event.ctrlKey && event.key.toLowerCase() === "l") {
+                  event.preventDefault();
+                  clearScreen();
+                  return;
                 }
-              }
-            }}
-            spellCheck={false}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            disabled={activeEditor !== null}
-            className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none caret-emerald-400"
-          />
-        </div>
+
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  if (history.length === 0) return;
+                  if (historyIndex === null) {
+                    setHistoryDraft(input);
+                    const nextIndex = history.length - 1;
+                    setHistoryIndex(nextIndex);
+                    setInput(history[nextIndex]);
+                    return;
+                  }
+                  if (historyIndex > 0) {
+                    const nextIndex = historyIndex - 1;
+                    setHistoryIndex(nextIndex);
+                    setInput(history[nextIndex]);
+                  }
+                  return;
+                }
+
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  if (historyIndex === null) return;
+                  if (historyIndex < history.length - 1) {
+                    const nextIndex = historyIndex + 1;
+                    setHistoryIndex(nextIndex);
+                    setInput(history[nextIndex]);
+                    return;
+                  }
+                  setHistoryIndex(null);
+                  setInput(historyDraft);
+                  return;
+                }
+
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  const completion = completeInput(input, cwd);
+                  setInput(completion.nextInput);
+                  if (completion.suggestions.length > 1) {
+                    appendLines([
+                      {
+                        text: completion.suggestions.join("  "),
+                        tone: "muted"
+                      }
+                    ]);
+                  }
+                }
+              }}
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              disabled={activeEditor !== null}
+              className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none caret-emerald-400"
+            />
+          </div>
+        )}
       </div>
 
       {activeEditor && (

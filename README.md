@@ -11,6 +11,7 @@ npm run dev
 - Simulated Linux-like terminal UI
 - Virtual filesystem with read/write commands
 - Editable files with `vim <file>` / `vi <file>` (backed by JSVI)
+- Python execution with Pyodide via `python3 file.py` or `file.py`
 
 Inside vim:
 - `:w` saves

@@ -27,11 +27,18 @@ export type EditorLaunchRequest = {
   isNewFile: boolean;
 };
 
+export type PythonRunRequest = {
+  path: string[];
+  displayTarget: string;
+  argv: string[];
+};
+
 export type ExecutionResult = {
   nextCwd: string[];
   clear: boolean;
   lines: TerminalOutputLine[];
   editor?: EditorLaunchRequest;
+  pythonRun?: PythonRunRequest;
 };
 
 export type CompletionResult = {
@@ -49,6 +56,8 @@ const COMMANDS = [
   "tree",
   "vim",
   "vi",
+  "python3",
+  "python",
   "touch",
   "mkdir",
   "rm",
@@ -70,6 +79,8 @@ const PATH_COMMANDS = new Set([
   "tree",
   "vim",
   "vi",
+  "python3",
+  "python",
   "touch",
   "mkdir",
   "rm",
@@ -88,6 +99,7 @@ const COMMON_HELP = [
   "  less      simplified pager (prints file)",
   "  tree      print directory tree",
   "  vim       edit a file in vi mode",
+  "  python3   run a .py file with Pyodide",
   "  touch     create an empty file",
   "  mkdir     create a directory (-p supported)",
   "  rm        remove files (-r, -f supported)",
@@ -252,6 +264,54 @@ export function executeCommand(input: string, cwd: string[], history: string[]):
   const command = parts[0];
   const args = parts.slice(1);
 
+  const resolvePythonTarget = (
+    executable: string,
+    target: string,
+    argv: string[]
+  ): ExecutionResult => {
+    if (!target.endsWith(".py")) {
+      return {
+        nextCwd: cwd,
+        clear: false,
+        lines: [{ text: `${executable}: ${target}: not a Python file`, tone: "error" }]
+      };
+    }
+
+    const path = resolvePathSegments(cwd, target);
+    const node = getNodeAtPath(path);
+
+    if (!node) {
+      return {
+        nextCwd: cwd,
+        clear: false,
+        lines: [{ text: `${executable}: can't open file '${target}': No such file or directory`, tone: "error" }]
+      };
+    }
+
+    if (node.type !== "file") {
+      return {
+        nextCwd: cwd,
+        clear: false,
+        lines: [{ text: `${executable}: can't open file '${target}': Is a directory`, tone: "error" }]
+      };
+    }
+
+    return {
+      nextCwd: cwd,
+      clear: false,
+      lines: [],
+      pythonRun: {
+        path,
+        displayTarget: target,
+        argv
+      }
+    };
+  };
+
+  if (command.endsWith(".py")) {
+    return resolvePythonTarget("python3", command, args);
+  }
+
   switch (command) {
     case "help":
       return {
@@ -388,6 +448,18 @@ export function executeCommand(input: string, cwd: string[], history: string[]):
           isNewFile: !existingFile
         }
       };
+    }
+    case "python3":
+    case "python": {
+      if (args.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `${command}: missing file operand`, tone: "error" }]
+        };
+      }
+
+      return resolvePythonTarget(command, args[0], args.slice(1));
     }
     case "touch": {
       const parsed = parseShortFlags(args, new Set(["a", "m", "c"]));
