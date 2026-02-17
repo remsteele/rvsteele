@@ -258,9 +258,9 @@ export function getNodeAtPath(segments: string[]): VirtualNode | null {
   let node: VirtualNode = VFS_ROOT;
   for (const segment of segments) {
     if (node.type !== "directory") return null;
-    const next = node.children[segment];
-    if (!next) return null;
-    node = next;
+    const nextNode: VirtualNode | undefined = node.children[segment];
+    if (!nextNode) return null;
+    node = nextNode;
   }
   return node;
 }
@@ -312,6 +312,37 @@ export function createFile(segments: string[]): VfsMutationResult {
   return { ok: true };
 }
 
+export function writeFile(segments: string[], content: string): VfsMutationResult {
+  if (segments.length === 0) {
+    return { ok: false, reason: "is-directory" };
+  }
+
+  const existingNode = getNodeAtPath(segments);
+  if (existingNode) {
+    if (existingNode.type === "directory") {
+      return { ok: false, reason: "is-directory" };
+    }
+
+    existingNode.content = content;
+    return { ok: true };
+  }
+
+  const parentInfo = getParentDirectory(segments);
+  if (!parentInfo.parent || !parentInfo.name) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  if (!isValidNodeName(parentInfo.name)) {
+    return { ok: false, reason: "invalid-name" };
+  }
+
+  parentInfo.parent.children[parentInfo.name] = {
+    type: "file",
+    content
+  };
+  return { ok: true };
+}
+
 export function createDirectory(segments: string[], recursive = false): VfsMutationResult {
   if (segments.length === 0) {
     return recursive ? { ok: true } : { ok: false, reason: "already-exists" };
@@ -328,18 +359,18 @@ export function createDirectory(segments: string[], recursive = false): VfsMutat
         return { ok: false, reason: "parent-not-directory" };
       }
 
-      const next = node.children[segment];
-      if (!next) {
+      const nextNode: VirtualNode | undefined = node.children[segment];
+      if (!nextNode) {
         const created: VirtualDirectory = { type: "directory", children: {} };
         node.children[segment] = created;
         node = created;
         continue;
       }
 
-      if (next.type !== "directory") {
+      if (nextNode.type !== "directory") {
         return { ok: false, reason: "parent-not-directory" };
       }
-      node = next;
+      node = nextNode;
     }
 
     return { ok: true };

@@ -10,6 +10,10 @@ export function DraggableTerminalWindow({ children }: { children: React.ReactNod
   const [position, setPosition] = useState<Position | null>(null);
 
   const focusTerminalInput = () => {
+    if (document.querySelector("[data-vim-active='true']")) {
+      return;
+    }
+
     const focusVisibleInput = () => {
       const inputs = Array.from(
         document.querySelectorAll<HTMLInputElement>("input[data-terminal-input='true']")

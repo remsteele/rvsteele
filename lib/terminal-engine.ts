@@ -20,10 +20,18 @@ export type TerminalOutputLine = {
   tone?: OutputTone;
 };
 
+export type EditorLaunchRequest = {
+  path: string[];
+  displayTarget: string;
+  initialContent: string;
+  isNewFile: boolean;
+};
+
 export type ExecutionResult = {
   nextCwd: string[];
   clear: boolean;
   lines: TerminalOutputLine[];
+  editor?: EditorLaunchRequest;
 };
 
 export type CompletionResult = {
@@ -39,6 +47,8 @@ const COMMANDS = [
   "cat",
   "less",
   "tree",
+  "vim",
+  "vi",
   "touch",
   "mkdir",
   "rm",
@@ -58,6 +68,8 @@ const PATH_COMMANDS = new Set([
   "cat",
   "less",
   "tree",
+  "vim",
+  "vi",
   "touch",
   "mkdir",
   "rm",
@@ -75,6 +87,7 @@ const COMMON_HELP = [
   "  cat       print file contents",
   "  less      simplified pager (prints file)",
   "  tree      print directory tree",
+  "  vim       edit a file in vi mode",
   "  touch     create an empty file",
   "  mkdir     create a directory (-p supported)",
   "  rm        remove files (-r, -f supported)",
@@ -295,6 +308,86 @@ export function executeCommand(input: string, cwd: string[], history: string[]):
         };
       }
       return { nextCwd: path, clear: false, lines: [] };
+    }
+    case "vim":
+    case "vi": {
+      if (args.length === 0) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `${command}: missing file operand`, tone: "error" }]
+        };
+      }
+
+      if (args.length > 1) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `${command}: only single-file editing is supported`, tone: "error" }]
+        };
+      }
+
+      const target = args[0];
+      if (target.startsWith("-")) {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `${command}: unsupported option '${target}'`, tone: "error" }]
+        };
+      }
+
+      const path = resolvePathSegments(cwd, target);
+      const existing = getNodeAtPath(path);
+      const existingFile = existing && existing.type === "file" ? existing : null;
+
+      if (existing?.type === "directory") {
+        return {
+          nextCwd: cwd,
+          clear: false,
+          lines: [{ text: `${command}: ${target}: Is a directory`, tone: "error" }]
+        };
+      }
+
+      if (!existingFile) {
+        const parentPath = path.slice(0, -1);
+        const parent = getNodeAtPath(parentPath);
+        if (!parent) {
+          return {
+            nextCwd: cwd,
+            clear: false,
+            lines: [{ text: `${command}: ${target}: No such file or directory`, tone: "error" }]
+          };
+        }
+
+        if (parent.type !== "directory") {
+          return {
+            nextCwd: cwd,
+            clear: false,
+            lines: [{ text: `${command}: ${target}: Not a directory`, tone: "error" }]
+          };
+        }
+
+        const baseName = path[path.length - 1];
+        if (!baseName || baseName === "." || baseName === "..") {
+          return {
+            nextCwd: cwd,
+            clear: false,
+            lines: [{ text: `${command}: ${target}: Invalid file name`, tone: "error" }]
+          };
+        }
+      }
+
+      return {
+        nextCwd: cwd,
+        clear: false,
+        lines: !existingFile ? [{ text: `"${target}" [New file]`, tone: "muted" }] : [],
+        editor: {
+          path,
+          displayTarget: target,
+          initialContent: existingFile?.content ?? "",
+          isNewFile: !existingFile
+        }
+      };
     }
     case "touch": {
       const parsed = parseShortFlags(args, new Set(["a", "m", "c"]));

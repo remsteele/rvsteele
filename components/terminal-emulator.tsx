@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { VimEditor } from "@/components/vim-editor";
 import {
   buildPrompt,
   completeInput,
   executeCommand,
+  type EditorLaunchRequest,
   type OutputTone
 } from "@/lib/terminal-engine";
-import { HOME_PATH } from "@/lib/virtual-filesystem";
+import { HOME_PATH, writeFile } from "@/lib/virtual-filesystem";
 
 type RenderedLine = {
   id: number;
@@ -35,6 +37,7 @@ export function TerminalEmulator() {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [historyDraft, setHistoryDraft] = useState("");
+  const [activeEditor, setActiveEditor] = useState<EditorLaunchRequest | null>(null);
 
   const nextLineId = useRef(lines.length + 1);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -58,7 +61,14 @@ export function TerminalEmulator() {
     setLines([]);
   };
 
+  const focusShellInput = () => {
+    if (activeEditor) return;
+    inputRef.current?.focus({ preventScroll: true });
+  };
+
   const runInput = () => {
+    if (activeEditor) return;
+
     const command = input;
     appendLines([{ text: `${prompt}${command.length > 0 ? ` ${command}` : ""}` }]);
 
@@ -77,16 +87,29 @@ export function TerminalEmulator() {
       appendLines(result.lines);
     }
 
+    if (result.editor) {
+      setActiveEditor(result.editor);
+    }
+
     setInput("");
     setHistoryIndex(null);
     setHistoryDraft("");
   };
 
   const interruptInput = () => {
+    if (activeEditor) return;
+
     appendLines([{ text: `${prompt}${input.length > 0 ? ` ${input}` : ""}^C` }]);
     setInput("");
     setHistoryIndex(null);
     setHistoryDraft("");
+  };
+
+  const closeEditor = () => {
+    setActiveEditor(null);
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    });
   };
 
   useEffect(() => {
@@ -95,16 +118,12 @@ export function TerminalEmulator() {
     viewport.scrollTop = viewport.scrollHeight;
   }, [lines, input]);
 
-  const focusInput = () => {
-    inputRef.current?.focus({ preventScroll: true });
-  };
-
   return (
     <div
       className="terminal-font flex h-full w-full flex-col bg-[#0a0a0a] text-[14px] leading-6 text-slate-200 selection:bg-emerald-700/70 selection:text-white"
-      onPointerDownCapture={focusInput}
-      onMouseDownCapture={focusInput}
-      onClick={focusInput}
+      onPointerDownCapture={focusShellInput}
+      onMouseDownCapture={focusShellInput}
+      onClick={focusShellInput}
     >
       <div
         ref={viewportRef}
@@ -192,10 +211,55 @@ export function TerminalEmulator() {
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
+            disabled={activeEditor !== null}
             className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none caret-emerald-400"
           />
         </div>
       </div>
+
+      {activeEditor && (
+        <VimEditor
+          fileLabel={activeEditor.displayTarget}
+          initialContent={activeEditor.initialContent}
+          onSave={(nextContent) => {
+            const writeResult = writeFile(activeEditor.path, nextContent);
+            if (writeResult.ok) {
+              appendLines([
+                { text: `"${activeEditor.displayTarget}" written`, tone: "muted" }
+              ]);
+              return;
+            }
+
+            if (writeResult.reason === "not-found") {
+              appendLines([
+                {
+                  text: `vim: ${activeEditor.displayTarget}: No such file or directory`,
+                  tone: "error"
+                }
+              ]);
+              return;
+            }
+
+            if (writeResult.reason === "is-directory") {
+              appendLines([
+                {
+                  text: `vim: ${activeEditor.displayTarget}: Is a directory`,
+                  tone: "error"
+                }
+              ]);
+              return;
+            }
+
+            appendLines([
+              {
+                text: `vim: ${activeEditor.displayTarget}: Failed to write file`,
+                tone: "error"
+              }
+            ]);
+          }}
+          onClose={closeEditor}
+        />
+      )}
     </div>
   );
 }
